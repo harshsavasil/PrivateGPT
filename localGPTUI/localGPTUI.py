@@ -4,7 +4,7 @@ import sys
 import tempfile
 
 import requests
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -16,6 +16,11 @@ API_HOST = "http://localhost:5110/api"
 
 
 # PAGES #
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static', 'social_icons'), 'favicon.png', mimetype='image/vnd.microsoft.icon')
+
 @app.route("/", methods=["GET", "POST"])
 def home_page():
     if request.method == "POST":
