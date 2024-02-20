@@ -21,6 +21,7 @@ from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 
 from constants import *
+from prompt_template_utils import get_prompt_template
 from run_localGPT import load_model
 
 load_dotenv(find_dotenv())
@@ -60,7 +61,7 @@ def load_embeddings():
 def load_db():
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
-        embedding_function=st.session_state.EMBEDDINGS,
+        embedding_function=load_embeddings(),
         client_settings=CHROMA_SETTINGS,
     )
     return db
@@ -82,34 +83,20 @@ else:
 
 # Define the retreiver
 # load the vectorstore
-if "EMBEDDINGS" not in st.session_state:
-    st.session_state.EMBEDDINGS = load_embeddings()
-
-if "DB" not in st.session_state:
-    st.session_state.DB = load_db()
-
-if "RETRIEVER" not in st.session_state:
-    RETRIEVER = st.session_state.DB.as_retriever()
-    st.session_state.RETRIEVER = RETRIEVER
-
-if "LLM" not in st.session_state:
-    st.session_state["LLM"] = load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME)
-
 
 if "QA" not in st.session_state:
-    prompt, memory = model_memory()
+    prompt, memory = get_prompt_template(promptTemplate_type="llama", history=False)
 
     QA = RetrievalQA.from_chain_type(
-        llm=st.session_state.LLM,
+        llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
         chain_type="stuff",
-        retriever=RETRIEVER,
+        retriever=load_db().as_retriever(),
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt, "memory": memory},
     )
     st.session_state["QA"] = QA
 
 
-st.title("Life Guru")
 with st.sidebar:
     st.image("res/guruji.jpg")
     st.title("Life Guru 🙏💬")
@@ -122,6 +109,7 @@ with st.sidebar:
     """
     )
 
+st.title("Life Guru")
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -135,15 +123,16 @@ for message in st.session_state.messages:
 if prompt := st.chat_input("Ask me Anything!"):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
+    
     # Display user message in chat message container
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.write(prompt)
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         with st.spinner("Finding Answer to your problems.."):
             response = st.session_state["QA"](prompt)
             answer = response["result"]
-            response = st.write(answer)
+            st.write(answer)
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": response})
