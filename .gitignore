@@ -2,6 +2,7 @@
 /.vscode
 /DB
 /models
+/SOURCE_DOCUMENTS
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

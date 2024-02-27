@@ -15,7 +15,7 @@ from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import Chroma, Milvus
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -36,6 +36,9 @@ from constants import (
     MAX_NEW_TOKENS,
     MODELS_PATH,
     CHROMA_SETTINGS,
+    MILVUS_COLLECTION_NAME,
+    MILVUS_HOST,
+    MILVUS_PORT
 )
 
 
@@ -132,7 +135,21 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
+    if os.getenv("VECTOR_DATABASE") == "MILVUS":
+        db = Milvus(
+            embeddings,
+            connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+            collection_name=MILVUS_COLLECTION_NAME,
+        )
+    elif os.getenv("VECTOR_DATABASE") == "CHROMA":
+        db = Chroma(
+            persist_directory=PERSIST_DIRECTORY,
+            embedding_function=embeddings,
+            client_settings=CHROMA_SETTINGS
+        )
+    else:
+        raise Exception("Unknown Vector Database")
+
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.

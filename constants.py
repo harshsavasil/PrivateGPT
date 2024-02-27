@@ -15,7 +15,8 @@ ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 # Define the folder for storing database
 SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 
-PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
+CHROMA_DIRECTORY = os.getenv("CHROMA_DIRECTORY") or "DB"
+PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/{CHROMA_DIRECTORY}"
 
 MODELS_PATH = "./models"
 
@@ -27,6 +28,10 @@ CHROMA_SETTINGS = Settings(
     anonymized_telemetry=False,
     is_persistent=True,
 )
+# Define the Milvus settings
+MILVUS_HOST = "127.0.0.1"
+MILVUS_PORT = "19530"
+MILVUS_COLLECTION_NAME = os.getenv("MILVUS_COLLECTION_NAME") or 'qa_database'
 
 # Context Window and Max New Tokens
 CONTEXT_WINDOW_SIZE = 4096

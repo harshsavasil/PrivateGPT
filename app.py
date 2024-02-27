@@ -16,13 +16,16 @@ from streamlit_chat import message
 import torch
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import Chroma, Milvus
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
+from langchain.callbacks.manager import CallbackManager
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 
 from constants import *
 from prompt_template_utils import get_prompt_template
-from run_localGPT import load_model
+from run_localGPT import load_model, retrieval_qa_pipline, get_embeddings
+from ingest import start_ingesting
 
 load_dotenv(find_dotenv())
 
@@ -32,6 +35,7 @@ st.set_page_config(
     page_title='Struti AI',
     page_icon='🔖',
     layout='wide',
+    initial_sidebar_state='auto',
 )
 
 def model_memory():
@@ -54,16 +58,27 @@ def model_memory():
 ## To cache resource across multiple session
 @st.cache_resource
 def load_embeddings():
-    return HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
+    return get_embeddings(DEVICE_TYPE)
+    # return HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
 
 ## To cache resource across multiple session
 @st.cache_resource
 def load_db():
-    db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
-        embedding_function=load_embeddings(),
-        client_settings=CHROMA_SETTINGS,
-    )
+    VECTOR_DATABASE = os.getenv("VECTOR_DATABASE")
+    if VECTOR_DATABASE == 'MILVUS':
+        db = Milvus(
+            load_embeddings(),
+            connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+            collection_name=MILVUS_COLLECTION_NAME,
+        )
+    elif VECTOR_DATABASE == 'CHROMA':
+        db = Chroma(
+            persist_directory=PERSIST_DIRECTORY,
+            embedding_function=load_embeddings(),
+            client_settings=CHROMA_SETTINGS,
+        )
+    else:
+        db = None
     return db
 
 ## To cache resource across multiple session
@@ -71,7 +86,38 @@ def load_db():
 def load_llm(device_type, model_id, model_basename):
     llm = load_model(device_type=device_type, model_id=model_id, model_basename=model_basename)
     return llm
-    
+
+## To cache resource across multiple session
+@st.cache_resource
+def get_callback_manager():
+    return CallbackManager([StreamingStdOutCallbackHandler()])
+
+def get_qa_chain(use_history):
+    prompt, memory = get_prompt_template(promptTemplate_type="llama", history=use_history)
+    if use_history:
+        qa = RetrievalQA.from_chain_type(
+            llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
+            chain_type="stuff",
+            retriever=load_db().as_retriever(),
+            return_source_documents=True,
+            callbacks=get_callback_manager(),
+            chain_type_kwargs={
+                "prompt": prompt,
+                "memory": memory
+            },
+        )
+    else:
+        qa = RetrievalQA.from_chain_type(
+            llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
+            chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
+            retriever=load_db().as_retriever(),
+            return_source_documents=True,  # verbose=True,
+            callbacks=get_callback_manager(),
+            chain_type_kwargs={
+                "prompt": prompt,
+            },
+        )
+    return qa
 
 # identify device type
 if torch.backends.mps.is_available():
@@ -81,35 +127,35 @@ elif torch.cuda.is_available():
 else:
     DEVICE_TYPE = "cpu"
 
-# Define the retreiver
-# load the vectorstore
 
 if "QA" not in st.session_state:
-    prompt, memory = get_prompt_template(promptTemplate_type="llama", history=False)
-
-    QA = RetrievalQA.from_chain_type(
-        llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
-        chain_type="stuff",
-        retriever=load_db().as_retriever(),
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": prompt, "memory": memory},
-    )
-    st.session_state["QA"] = QA
+    st.session_state["QA"] = get_qa_chain(True)
 
 
 with st.sidebar:
-    st.image("res/guruji.jpg")
-    st.title("Life Guru 🙏💬")
+    st.image("res/coder.jpg")
+    st.title("System Design Expert 💻 💬")
     st.markdown(
     """
         ## About
-        An AI Guru ji who can help you 24/7 by searching
-        answers for your questions from vedas in realtime
+        A System Design Expert who can help you 24/7 by searching
+        answers for your questions from popular coding books in realtime
         and provide you answers accordingly.
     """
     )
+    # uploaded_files = st.file_uploader("Choose files", accept_multiple_files=True, type="pdf")
 
-st.title("Life Guru")
+    # if st.button("Submit") and uploaded_files is not None:
+    #     with st.spinner(text="Uploading PDF and Generating Embeddings.."):
+    #         for uploaded_file in uploaded_files:
+    #             bytes_data = uploaded_file.read()
+    #             if uploaded_file is not None:
+    #                 with open(os.path.join("SOURCE_DOCUMENTS", uploaded_file.name), "wb") as f:
+    #                     f.write(uploaded_file.getbuffer())
+    #         output = start_ingesting()
+    #         # time.sleep(5) 
+    #     st.sidebar.success('Done!')
+
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -134,5 +180,5 @@ if prompt := st.chat_input("Ask me Anything!"):
             response = st.session_state["QA"](prompt)
             answer = response["result"]
             st.write(answer)
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": response})
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": answer})

@@ -6,8 +6,11 @@ import click
 import torch
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import Chroma, Milvus
 from utils import get_embeddings
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
 
 from constants import (
     CHROMA_SETTINGS,
@@ -16,6 +19,9 @@ from constants import (
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
+    MILVUS_HOST,
+    MILVUS_PORT,
+    MILVUS_COLLECTION_NAME,
 )
 
 
@@ -23,7 +29,6 @@ def file_log(logentry):
     file1 = open("file_ingest.log", "a")
     file1.write(logentry + "\n")
     file1.close()
-    print(logentry + "\n")
 
 
 def load_single_document(file_path: str) -> Document:
@@ -51,7 +56,7 @@ def load_document_batch(filepaths):
         futures = [exe.submit(load_single_document, name) for name in filepaths]
         # collect data
         if futures is None:
-            file_log(name + " failed to submit")
+            file_log(filepaths + " failed to submit")
             return None
         else:
             data_list = [future.result() for future in futures]
@@ -64,7 +69,7 @@ def load_documents(source_dir: str) -> list[Document]:
     paths = []
     for root, _, files in os.walk(source_dir):
         for file_name in files:
-            print("Importing: " + file_name)
+            logging.info("Importing: " + file_name)
             file_extension = os.path.splitext(file_name)[1]
             source_file_path = os.path.join(root, file_name)
             if file_extension in DOCUMENT_MAP.keys():
@@ -142,7 +147,9 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     ),
     help="Device to run on. (Default is cuda)",
 )
-def main(device_type):
+
+def start_ingesting(device_type):
+    logging.info("Device Type: {0}".format(device_type))
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
@@ -157,7 +164,7 @@ def main(device_type):
     logging.info(f"Split into {len(texts)} chunks of text")
 
     """
-    (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within fun_localGPT.py.
+    (1) Chooses an appropriate langchain library based on the embedding model name.  Matching code is contained within fun_localGPT.py.
     
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
@@ -166,17 +173,39 @@ def main(device_type):
     embeddings = get_embeddings(device_type)
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
+    if os.getenv("VECTOR_DATABASE") == "CHROMA":
+        db = Chroma.from_documents(
+            texts,
+            embeddings,
+            persist_directory=PERSIST_DIRECTORY,
+            client_settings=CHROMA_SETTINGS,
+        )
+    elif os.getenv("VECTOR_DATABASE") == "MILVUS":
+        db = Milvus.from_documents(
+            texts,
+            embeddings,
+            connection_args={
+                "host": MILVUS_HOST,
+                "port": MILVUS_PORT
+            },
+            collection_name=MILVUS_COLLECTION_NAME,
+            drop_old=True,
+        )
+    else:
+        raise Exception("Unknown Vector database")
 
-    db = Chroma.from_documents(
-        texts,
-        embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
-    )
-
+def cleanup_old_data():
+    if os.getenv("VECTOR_DATABASE") == "CHROMA":
+        folder_path = os.path.join(os.getcwd(), 'DB')
+        for root, dirs, files in os.walk(folder_path, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
 
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
     )
-    main()
+    cleanup_old_data()
+    start_ingesting()
