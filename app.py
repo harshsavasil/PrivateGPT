@@ -1,8 +1,7 @@
-import time
 from dotenv import find_dotenv, load_dotenv
 import os
 import sys
-import logging
+import yaml
 
 # Get the current script's directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,10 +12,10 @@ sys.path.append(parent_dir)
 
 
 import streamlit as st
+import streamlit_authenticator as stauth
 from streamlit_chat import message
 import torch
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.vectorstores import Chroma, Milvus
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -31,13 +30,28 @@ from ingest import start_ingesting
 load_dotenv(find_dotenv())
 
 
+
+
+from yaml.loader import SafeLoader
+with open(os.path.join('authentication', './authentication.yaml')) as file:
+    config = yaml.load(file, Loader=SafeLoader)
+
 # Streamlit app code
 st.set_page_config(
-    page_title='Struti AI',
+    page_title='Zomentum AI',
     page_icon='🔖',
     layout='wide',
     initial_sidebar_state='auto',
 )
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    config['preauthorized']
+)
+
 
 def model_memory():
     # Adding history to the model.
@@ -60,7 +74,6 @@ def model_memory():
 @st.cache_resource
 def load_embeddings():
     return get_embeddings(DEVICE_TYPE)
-    # return HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
 
 ## To cache resource across multiple session
 @st.cache_resource
@@ -120,6 +133,10 @@ def get_qa_chain(use_history, return_source_documents=False):
         )
     return qa
 
+
+def set_prompt(component):
+    pass
+
 # identify device type
 if torch.backends.mps.is_available():
     DEVICE_TYPE = "mps"
@@ -128,57 +145,51 @@ elif torch.cuda.is_available():
 else:
     DEVICE_TYPE = "cpu"
 
+name, authentication_status, username = authenticator.login(location='main')
 
-if "QA" not in st.session_state:
-    st.session_state["QA"] = get_qa_chain(False, True)
+if st.session_state["authentication_status"]:
+    if "QA" not in st.session_state:
+        st.session_state["QA"] = get_qa_chain(False, True)
 
 
-with st.sidebar:
-    st.image("res/sales_agent.png")
-    st.title("Customer Data Research Expert 💻 💬")
-    st.markdown(
-    """
-        ## About
-        An Expert who can help you 24/7 by searching
-        answers for your questions from customer data.
-    """
-    )
-    # uploaded_files = st.file_uploader("Choose files", accept_multiple_files=True, type="pdf")
+    with st.sidebar:
+        st.image("res/sales_agent.png")
+        st.title("Customer Data Research Expert 💻 💬")
+        st.markdown(
+        """
+            ## About me
+            An Expert who can help you 24/7 by searching
+            answers for your questions from customer demo calls data.
+        """
+        )
+    authenticator.logout('Logout', 'sidebar')
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    # if st.button("Submit") and uploaded_files is not None:
-    #     with st.spinner(text="Uploading PDF and Generating Embeddings.."):
-    #         for uploaded_file in uploaded_files:
-    #             bytes_data = uploaded_file.read()
-    #             if uploaded_file is not None:
-    #                 with open(os.path.join("SOURCE_DOCUMENTS", uploaded_file.name), "wb") as f:
-    #                     f.write(uploaded_file.getbuffer())
-    #         output = start_ingesting()
-    #         # time.sleep(5) 
-    #     st.sidebar.success('Done!')
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+    # Accept user input
+    if prompt := st.chat_input("Ask me Anything!", key='prompt_input'):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.write(prompt)
 
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Accept user input
-if prompt := st.chat_input("Ask me Anything!"):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.write(prompt)
-
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        with st.spinner("Finding Answer to your problems.."):
-            response = st.session_state["QA"](prompt)
-            answer = response["result"]
-            st.write(answer)
-        # Add assistant response to chat history
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            with st.spinner("Finding Answer to your problems.."):
+                response = st.session_state["QA"](prompt)
+                answer = response["result"]
+                st.write(answer)
+            # Add assistant response to chat history
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+elif st.session_state["authentication_status"] == False:
+    st.error('Username/password is incorrect')
+elif st.session_state["authentication_status"] == None:
+    st.warning('Please enter your username and password')
