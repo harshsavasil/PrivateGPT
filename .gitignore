@@ -1,9 +1,11 @@
 # Ignore vscode
 /.vscode
-/DB
-/models
-/SOURCE_DOCUMENTS
-
+CODING_DB
+ZOMENTUM_DB
+DB
+models
+SOURCE_DOCUMENTS
+output
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

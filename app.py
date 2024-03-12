@@ -2,6 +2,7 @@ import time
 from dotenv import find_dotenv, load_dotenv
 import os
 import sys
+import logging
 
 # Get the current script's directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -92,14 +93,14 @@ def load_llm(device_type, model_id, model_basename):
 def get_callback_manager():
     return CallbackManager([StreamingStdOutCallbackHandler()])
 
-def get_qa_chain(use_history):
+def get_qa_chain(use_history, return_source_documents=False):
     prompt, memory = get_prompt_template(promptTemplate_type="llama", history=use_history)
     if use_history:
         qa = RetrievalQA.from_chain_type(
             llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
             chain_type="stuff",
             retriever=load_db().as_retriever(),
-            return_source_documents=True,
+            return_source_documents=return_source_documents,
             callbacks=get_callback_manager(),
             chain_type_kwargs={
                 "prompt": prompt,
@@ -110,8 +111,8 @@ def get_qa_chain(use_history):
         qa = RetrievalQA.from_chain_type(
             llm=load_llm(DEVICE_TYPE, MODEL_ID, MODEL_BASENAME),
             chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
-            retriever=load_db().as_retriever(),
-            return_source_documents=True,  # verbose=True,
+            retriever=load_db().as_retriever(search_kwargs={"k": 10}),
+            return_source_documents=return_source_documents,  # verbose=True,
             callbacks=get_callback_manager(),
             chain_type_kwargs={
                 "prompt": prompt,
@@ -129,18 +130,17 @@ else:
 
 
 if "QA" not in st.session_state:
-    st.session_state["QA"] = get_qa_chain(True)
+    st.session_state["QA"] = get_qa_chain(False, True)
 
 
 with st.sidebar:
-    st.image("res/coder.jpg")
-    st.title("System Design Expert 💻 💬")
+    st.image("res/sales_agent.png")
+    st.title("Customer Data Research Expert 💻 💬")
     st.markdown(
     """
         ## About
-        A System Design Expert who can help you 24/7 by searching
-        answers for your questions from popular coding books in realtime
-        and provide you answers accordingly.
+        An Expert who can help you 24/7 by searching
+        answers for your questions from customer data.
     """
     )
     # uploaded_files = st.file_uploader("Choose files", accept_multiple_files=True, type="pdf")

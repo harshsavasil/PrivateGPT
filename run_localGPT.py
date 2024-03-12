@@ -9,6 +9,10 @@ from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
 
+from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv())
+
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 from prompt_template_utils import get_prompt_template

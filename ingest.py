@@ -14,6 +14,7 @@ load_dotenv(find_dotenv())
 
 from constants import (
     CHROMA_SETTINGS,
+    CHROMA_DIRECTORY,
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
@@ -196,7 +197,7 @@ def start_ingesting(device_type):
 
 def cleanup_old_data():
     if os.getenv("VECTOR_DATABASE") == "CHROMA":
-        folder_path = os.path.join(os.getcwd(), 'DB')
+        folder_path = os.path.join(os.getcwd(), CHROMA_DIRECTORY)
         for root, dirs, files in os.walk(folder_path, topdown=False):
             for name in files:
                 os.remove(os.path.join(root, name))
